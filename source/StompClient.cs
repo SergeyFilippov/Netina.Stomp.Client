@@ -66,12 +66,12 @@ namespace Netina.Stomp.Client
                 await Reconnect();
             });
 
-            _connectingHeaders.Add("accept-version", string.IsNullOrEmpty(stompVersion) ? "1.0,1.1,1.2" : stompVersion);
-            _connectingHeaders.Add("heart-beat", string.IsNullOrEmpty(heartBeat) ? "0,1000" : heartBeat);
+            _connectingHeaders.Add(StompHeader.AcceptVersion, string.IsNullOrEmpty(stompVersion) ? "1.0,1.1,1.2" : stompVersion);
+            _connectingHeaders.Add(StompHeader.Heartbeat, string.IsNullOrEmpty(heartBeat) ? "0,1000" : heartBeat);
 
             OnConnect += (sender, message) =>
             {
-                Version = message.Headers["version"];
+                Version = message.Headers[StompHeader.Version];
             };
         }
 
@@ -106,8 +106,8 @@ namespace Netina.Stomp.Client
         public async Task SendAsync(object body, string destination, IDictionary<string, string> headers)
         {
             var jsonPayload = JsonConvert.SerializeObject(body);
-            headers.Add("content-type", "application/json;charset=UTF-8");
-            headers.Add("content-length", Encoding.UTF8.GetByteCount(jsonPayload).ToString());
+            headers.Add(StompHeader.ContentType, "application/json;charset=UTF-8");
+            headers.Add(StompHeader.ContentLength, Encoding.UTF8.GetByteCount(jsonPayload).ToString());
             await SendAsync(jsonPayload, destination, headers);
         }
 
@@ -116,7 +116,7 @@ namespace Netina.Stomp.Client
             if (StompState != StompConnectionState.Open)
                 await Reconnect();
 
-            headers.Add("destination", destination);
+            headers.Add(StompHeader.Destination, destination);
             var connectMessage = new StompMessage(StompCommand.Send, body, headers);
             await _socket.SendInstant(_stompTextSerializer.Serialize(connectMessage));
         }
@@ -131,8 +131,8 @@ namespace Netina.Stomp.Client
             if (StompState != StompConnectionState.Open)
                 await Reconnect();
 
-            headers.Add("destination", topic);
-            headers.Add("id", $"sub-{_subscribers.Count}");
+            headers.Add(StompHeader.Destination, topic);
+            headers.Add(StompHeader.Id, $"sub-{_subscribers.Count}");
             var subscribeMessage = new StompMessage(StompCommand.Subscribe, headers);
             await _socket.SendInstant(_stompTextSerializer.Serialize(subscribeMessage));
             _subscribers.Add(topic, handler);
@@ -171,10 +171,10 @@ namespace Netina.Stomp.Client
 
             var headers = new Dictionary<string, string>()
             {
-                { "id", id }
+                { StompHeader.Id, id }
             };
             if (!string.IsNullOrEmpty(transaction))
-                headers.Add("transaction", transaction);
+                headers.Add(StompHeader.Transaction, transaction);
             var connectMessage = new StompMessage(isPositive ? StompCommand.Ack : StompCommand.Nack, headers);
             await _socket.SendInstant(_stompTextSerializer.Serialize(connectMessage));
         }
@@ -188,7 +188,14 @@ namespace Netina.Stomp.Client
             }
             else
             {
-                message = _binaryMessageSerializer.Deserialize(messageEventArgs.Binary);
+                if (messageEventArgs.Binary.Length > 1)
+                {
+                    message = _binaryMessageSerializer.Deserialize(messageEventArgs.Binary);
+                }
+                else
+                {
+                    message = new StompMessage(StompCommand.HeartBeat);
+                }
             }
 
             OnMessage?.Invoke(this, message);
@@ -196,7 +203,7 @@ namespace Netina.Stomp.Client
                 OnConnect?.Invoke(this, message);
             if (message.Command == StompCommand.Error)
                 OnError?.Invoke(this, message);
-            if (message.Headers.TryGetValue("destination", out var header))
+            if (message.Headers.TryGetValue(StompHeader.Destination, out var header))
             {
                 if (!_subscribers.ContainsKey(header))
                 {

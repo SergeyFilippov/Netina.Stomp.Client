@@ -4,6 +4,7 @@ using System.IO;
 using System.Net.Http;
 using System.Runtime.CompilerServices;
 using System.Text;
+using Netina.Stomp.Client.Utils;
 
 namespace Netina.Stomp.Client.Messages
 {
@@ -36,7 +37,7 @@ namespace Netina.Stomp.Client.Messages
             var isBodyStarted = false;
             foreach (var currentByte in message)
             {
-                if (currentByte == previousByte && previousByte == 10)
+                if (currentByte == previousByte && previousByte == (byte)'\n')
                 {
                     isBodyStarted = true;
                 }
@@ -80,6 +81,20 @@ namespace Netina.Stomp.Client.Messages
                     }
                 }
             }
+
+            if (headers.TryGetValue(StompHeader.ContentLength, out var contentLength))
+            {
+                if (long.TryParse(contentLength, out var length))
+                {
+                    // -2 is here to compensate for message termination characters in the end of the byte array - [\0\10] 
+                    if (length != bodyBuffer.Count - 2)
+                    {
+                        throw new ApplicationException(
+                            "STOMP: Content length header value is different then actual length of bytes received.");
+                    }
+                }
+            }
+
 
             return new StompMessage(command, bodyBuffer.ToArray(), headers);
         }
